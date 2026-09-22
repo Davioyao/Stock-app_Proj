@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股月營收 + EPS 比較</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root { --bg:#f4f6f8; --card:#fff; --line:#e2e8f0; --txt:#1a202c; --muted:#64748b; --up:#c53030; --down:#2f855a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:-apple-system,"Noto Sans TC","Microsoft JhengHei",sans-serif; font-size:14px; }
+  header { background:#1a365d; color:#fff; padding:14px 18px; }
+  header h1 { margin:0; font-size:18px; }
+  header p { margin:4px 0 0; font-size:12px; opacity:.85; }
+  main { max-width:1100px; margin:0 auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card h2 { margin:0 0 10px; font-size:15px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input,select,button { font-size:14px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); }
+  button { cursor:pointer; background:#2b6cb0; color:#fff; border-color:#2b6cb0; }
+  button.ghost { background:#fff; color:#2b6cb0; }
+  button.warn { background:#fff; color:#718096; border-color:var(--line); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .chip { display:inline-flex; align-items:center; gap:6px; background:#ebf4ff; border:1px solid #bee3f8; border-radius:999px; padding:4px 6px 4px 12px; margin:3px; }
+  .chip b { font-size:13px; }
+  .chip button { padding:2px 8px; background:#fff; color:#c53030; border:1px solid #feb2b2; }
+  .hint { color:var(--muted); font-size:12px; }
+  .status { font-size:12px; padding:6px 10px; border-radius:8px; background:#f7fafc; border:1px solid var(--line); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { padding:8px 6px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+  th:first-child,td:first-child, th:nth-child(2),td:nth-child(2), th:nth-child(3),td:nth-child(3) { text-align:left; }
+  th { background:#f7fafc; position:sticky; top:0; }
+  .tbl-wrap { overflow:auto; max-height:420px; border:1px solid var(--line); border-radius:8px; }
+  .pos { color:var(--up); font-weight:600; }
+  .neg { color:var(--down); font-weight:600; }
+  .chart { width:100%; height:320px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:800px){ .grid2{ grid-template-columns:1fr; } th,td{ font-size:12px; } }
+  .quick button { padding:4px 10px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>台股月營收 + EPS 比較工具</h1>
+  <p>免資料庫・前端直連 API・支援多公司比較（代號 / 名稱皆可輸入）</p>
+</header>
+<main>
+  <section class="card">
+    <h2>1. 資料來源</h2>
+    <div class="row">
+      <button id="btnTwse">載入 TWSE 最新月營收（免 key）</button>
+      <button id="btnDemo" class="ghost">載入 Demo 趨勢資料（免 API）</button>
+      <button id="btnFinmind" class="ghost">用 FinMind 補歷史 + EPS（需 token）</button>
+      <button id="btnClear" class="warn">清除快取</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="token" type="password" placeholder="FinMind token（選填，存本機）" style="flex:1;min-width:220px">
+      <button id="btnSaveToken" class="ghost">儲存 token</button>
+    </div>
+    <p class="status" id="status">尚未載入資料。先按「載入 TWSE」或「載入 Demo」。上櫃 + EPS 歷史需要 FinMind token。</p>
+    <p class="hint">TWSE OpenAPI 只含「上市、當月」快照；要 12 個月趨勢、上櫃、EPS 季報，請用 FinMind。token 只存 localStorage，不會上傳。</p>
+  </section>
+
+  <section class="card">
+    <h2>2. 選擇要比較的公司（最多 5 家）</h2>
+    <div class="row">
+      <input id="search" list="stockList" placeholder="輸入代號或名稱，如 2330 / 台積電" style="flex:1;min-width:220px">
+      <datalist id="stockList"></datalist>
+      <button id="btnAdd">加入比較</button>
+    </div>
+    <div class="row quick" style="margin-top:8px" id="quick"></div>
+    <div id="chips" style="margin-top:8px"></div>
+    <p class="hint">也可直接用網址分享：<span id="shareUrl"></span> <button id="btnCopy" class="ghost" style="padding:2px 8px;font-size:12px">複製</button></p>
+  </section>
+
+  <section class="card">
+    <h2>3. 篩選列表</h2>
+    <div class="row">
+      <input id="fKeyword" placeholder="關鍵字過濾（代號/名稱）" style="flex:1;min-width:160px">
+      <select id="fIndustry"><option value="">全部產業</option></select>
+      <select id="fYoY">
+        <option value="-999">YoY 不限</option>
+        <option value="0">YoY &gt; 0%</option>
+        <option value="10">YoY &gt; 10%</option>
+        <option value="20">YoY &gt; 20%</option>
+      </select>
+      <select id="fSort">
+        <option value="yoy_desc">按 YoY 高到低</option>
+        <option value="rev_desc">按營收高到低</option>
+        <option value="code_asc">按代號</option>
+      </select>
+      <label class="hint"><input type="checkbox" id="fOnlySel"> 只看已選公司</label>
+    </div>
+    <div class="tbl-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" id="checkAll" title="全選"></th>
+          <th>代號</th><th>名稱</th><th>產業</th><th>資料年月</th>
+          <th>當月營收(千元)</th><th>MoM%</th><th>YoY%</th><th>累計YoY%</th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="9" style="text-align:center;color:#999">尚無資料</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4. 比較圖</h2>
+    <div class="grid2">
+      <div><h3 style="font-size:13px">當月營收 YoY%（最新月）</h3><div class="chart" id="chartYoY"></div></div>
+      <div><h3 style="font-size:13px">近 12 個月營收趨勢（需 FinMind 或 Demo）</h3><div class="chart" id="chartTrend"></div></div>
+    </div>
+    <div style="margin-top:12px"><h3 style="font-size:13px">近 8 季 EPS（需 FinMind 或 Demo）</h3><div class="chart" id="chartEps"></div></div>
+    <p class="hint" id="epsNote">EPS 為季頻率，月營收為月頻率，兩者時間軸分開看。</p>
+  </section>
+
+  <section class="card">
+    <h2>5. 比較明細</h2>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>公司</th><th>資料年月</th><th>當月營收(千元)</th><th>MoM%</th><th>YoY%</th><th>累計YoY%</th><th>近一季EPS</th><th>近4季EPS合計</th></tr></thead>
+      <tbody id="tbodyCmp"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const state = {
+  rows: [],        // TWSE 當月快照
+  trend: {},       // code -> [{ym, revenue}]
+  eps: {},         // code -> [{q, eps}]
+  selected: [],    // ["2330", ...]
+  nameMap: {},     // code -> name
+};
+const MAX_SEL = 5;
+const LS_TOKEN = "tw_finmind_token";
+const LS_CACHE = "tw_mrev_cache_v1";
+let demoLoaded = false;
+
+// 內建常見公司（離線也能搜尋；載入 TWSE 後會自動擴充）
+const BUILTIN = [["2330","台積電"],["2317","鴻海"],["2454","聯發科"],["2303","聯電"],["2881","富邦金"],["2882","國泰金"],["1301","台塑"],["1303","南亞"],["2002","中鋼"],["2412","中華電"],["2382","廣達"],["©",""]].filter(x=>x[0]!=="©");
+const QUICK = ["2330","2317","2454","2303","2382","2881","2412","2002"];
+
+function setStatus(msg){ $("status").textContent = msg; }
+function fmt(n){ if(n==null||n===""||isNaN(Number(n))) return "-"; return Number(n).toLocaleString("en-US"); }
+function pct(n){ if(n==null||n===""||isNaN(Number(n))) return "-"; const v=Number(n); const c=v>0?"pos":v<0?"neg":""; return `<span class="${c}">${v.toFixed(2)}</span>`; }
+function esc(s){ return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// TWSE 回傳鍵名可能微調，用包含字比對
+function pickKey(obj, ...keys){
+  const names = Object.keys(obj);
+  for(const k of keys){ if(k in obj) return k; }
+  for(const k of keys){ const f = names.find(n=>n.includes(k)); if(f) return f; }
+  return null;
+}
+function normRow(r){
+  const kCode = pickKey(r,"公司代號","代號") || "公司代號";
+  const kName = pickKey(r,"公司名稱","名稱") || "公司名稱";
+  const kInd  = pickKey(r,"產業別") || "產業別";
+  const kYm   = pickKey(r,"資料年月") || "資料年月";
+  const kRev  = pickKey(r,"當月營收") || "當月營收";
+  const kMoM  = pickKey(r,"上月比較增減") || "上月比較增減";
+  const kYoY  = pickKey(r,"去年同月增減") || "去年同月增減";
+  const kAcc  = pickKey(r,"前期比較增減","累計") || "累計營業收入-前期比較增減(%)";
+  const num = v => (v==null||v===""||v==="--") ? null : Number(String(v).replace(/,/g,""));
+  return {
+    code: String(r[kCode]??"").trim(),
+    name: String(r[kName]??"").trim(),
+    industry: String(r[kInd]??"").trim(),
+    ym: String(r[kYm]??"").trim(),
+    rev: num(r[kRev]), mom: num(r[kMoM]), yoy: num(r[kYoY]), accYoy: num(r[kAcc]),
+  };
+}
+
+async function loadTwse(){
+  setStatus("TWSE 載入中…");
+  const cache = readCache();
+  if(cache && Date.now()-cache.ts < 1000*60*60*12 && cache.rows?.length){
+    state.rows = cache.rows; afterRowsLoaded("（快取，12h 內）"); return;
+  }
+  const res = await fetch("https://openapi.twse.com.tw/v1/opendata/t187ap05_L");
+  if(!res.ok) throw new Error("TWSE HTTP "+res.status);
+  const raw = await res.json();
+  state.rows = raw.map(normRow).filter(r=>r.code);
+  writeCache({ts:Date.now(), rows:state.rows});
+  afterRowsLoaded("（即時）");
+}
+function afterRowsLoaded(tag){
+  state.rows.forEach(r=>{ state.nameMap[r.code]=r.name; });
+  refreshDatalist(); refreshIndustry(); renderTable(); renderCompare(); updateShare();
+  setStatus(`已載入 ${state.rows.length} 家上市月營收 ${tag}・資料年月：${state.rows[0]?.ym||"-"}。點表格勾選或上方搜尋加入比較。`);
+}
+function readCache(){ try{ return JSON.parse(localStorage.getItem(LS_CACHE)); }catch{ return null; } }
+function writeCache(o){ try{ localStorage.setItem(LS_CACHE, JSON.stringify(o)); }catch{} }
+
+function genDemoFor(code){
+  const i = Math.max(state.selected.indexOf(code), 0);
+  if(!state.trend[code]){
+    const base = [300,60,120][i%3]*1e8; const arr=[]; const now=new Date();
+    for(let k=11;k>=0;k--){ const d=new Date(now.getFullYear(),now.getMonth()-k,1);
+      const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      arr.push({ym, revenue:Math.round(base*(1+0.15*Math.sin(k+i))+base*0.05*k/12)}); }
+    state.trend[code]=arr;
+  }
+  if(!state.eps[code]){
+    const b=[9,2,5][i%3]; const arr=[];
+    for(let k=7;k>=0;k--){ arr.push({q:`Q${(k%4)+1}`, eps:+(b+Math.sin(k+i)*b*0.2).toFixed(2)}); }
+    state.eps[code]=arr;
+  }
+  if(!state.nameMap[code]) state.nameMap[code]=(BUILTIN.find(b=>b[0]===code)||[])[1]||code;
+}
+// Demo 資料：讓圖表立刻可用
+function loadDemo(){
+  if(!state.selected.length) state.selected = ["2330","2317","2454"];
+  state.selected.forEach(genDemoFor);
+  demoLoaded = true;
+  renderChips(); renderCompare(); updateShare();
+  setStatus("Demo 趨勢已載入（僅供版面測試，非真實財報）。要真實歷史請填 FinMind token 後按「用 FinMind 補歷史」。");
+}
+function ensureTrend(code){
+  if(state.trend[code]?.length && state.eps[code]?.length) return;
+  const token = $("token").value.trim() || localStorage.getItem(LS_TOKEN) || "";
+  if(token){ setStatus(`${code} 已加入，歷史補抓中…`); loadFinmindFor(code, token).then(renderCompare); }
+  else if(demoLoaded){ genDemoFor(code); renderCompare(); }
+  else setStatus(`${code} 已加入，但趨勢/EPS尚無資料：按「載入 Demo」或填 token 後按「用 FinMind 補歷史」。`);
+}
+
+// FinMind（需 token）
+async function loadFinmindFor(code, token){
+  try{
+    const r = await finmindFetch(token,"TaiwanStockMonthRevenue",code,"2023-01-01");
+    const rows = r.data||[];
+    const revKey = Object.keys(rows[0]||{}).find(k=>/revenue/i.test(k) && !/year|month|country/i.test(k)) || "revenue";
+    const dateKey = Object.keys(rows[0]||{}).find(k=>/date/i.test(k)) || "date";
+    state.trend[code] = rows.slice(-24).map(x=>{
+      const ym = (Number.isFinite(+x.revenue_year) && Number.isFinite(+x.revenue_month))
+        ? `${x.revenue_year}-${String(x.revenue_month).padStart(2,"0")}`
+        : String(x[dateKey]).slice(0,7);
+      return {ym, revenue:Number.isFinite(+x[revKey]) ? Math.round(x[revKey]/1000) : null};
+    });
+  }catch(e){ console.warn(code,"月營收失敗",e); }
+  try{
+    const f = await finmindFetch(token,"TaiwanStockFinancialStatements",code,"2022-01-01");
+    const rows = (f.data||[]).filter(x=>{ const t=String(x.type||x.account||"").toUpperCase(); return t.includes("EPS"); });
+    // 若是寬表（有 EPS 欄），改走寬表解析
+    let epsRows = rows;
+    if(!epsRows.length && f.data?.length && ("EPS" in f.data[0] || "eps" in f.data[0])){
+      epsRows = f.data.map(x=>({date:x.date, type:"EPS", value:x.EPS??x.eps}));
+    }
+    state.eps[code] = epsRows.slice(-8).map(x=>({q:String(x.date||"").slice(0,7), eps:Number(x.value)}));
+  }catch(e){ console.warn(code,"EPS失敗",e); }
+}
+async function loadFinmind(){
+  const token = $("token").value.trim() || localStorage.getItem(LS_TOKEN) || "";
+  if(!token){ setStatus("請先填 FinMind token。可到 FinMind 官網免費註冊取得。"); return; }
+  if(!state.selected.length){ setStatus("請先選至少 1 家公司。"); return; }
+  setStatus("FinMind 抓取中…（每家打 2 次 API，請勿頻繁重按）");
+  for(const code of state.selected){
+    await loadFinmindFor(code, token);
+    await new Promise(r=>setTimeout(r,400)); // 降速避免 600次/時爆掉
+  }
+  demoLoaded = false;
+  renderCompare();
+  setStatus("FinMind 補完歷史。若 EPS 空白，代表該 dataset 欄位名不同，請開 console 看原始欄位後再對應。");
+}
+async function finmindFetch(token,dataset,data_id,start_date){
+  const u = new URL("https://api.finmindtrade.com/api/v4/data");
+  u.searchParams.set("dataset",dataset); u.searchParams.set("data_id",data_id); u.searchParams.set("start_date",start_date);
+  const res = await fetch(u,{headers:{Authorization:`Bearer ${token}`}});
+  if(!res.ok) throw new Error("FinMind HTTP "+res.status);
+  return res.json();
+}
+
+// 搜尋 / 選股
+function refreshDatalist(){
+  const dl = $("stockList"); dl.innerHTML="";
+  const all = new Map(BUILTIN);
+  state.rows.forEach(r=>all.set(r.code,r.name));
+  [...all.entries()].forEach(([c,n])=>{ const o=document.createElement("option"); o.value=`${c} ${n}`; dl.appendChild(o); });
+}
+function refreshIndustry(){
+  const sel=$("fIndustry"); const cur=sel.value;
+  const inds=[...new Set(state.rows.map(r=>r.industry).filter(Boolean))].sort();
+  sel.innerHTML=`<option value="">全部產業</option>`+inds.map(i=>`<option>${esc(i)}</option>`).join("");
+  sel.value=cur;
+}
+function addCode(raw){
+  if(!raw) return;
+  const code = String(raw).trim().split(/\s+/)[0].replace(/\D/g,"").slice(0,4);
+  if(!/^\d{4}$/.test(code)){ setStatus(`「${raw}」不是有效代號（需 4 碼，如 2330）。`); return; }
+  if(state.selected.includes(code)) return;
+  if(state.selected.length>=MAX_SEL){ setStatus(`最多比較 ${MAX_SEL} 家，請先移除。`); return; }
+  state.selected.push(code);
+  if(!state.nameMap[code]) state.nameMap[code]=(BUILTIN.find(b=>b[0]===code)||[])[1]||"";
+  renderChips(); renderCompare(); updateShare(); renderTable(); ensureTrend(code);
+}
+function removeCode(code){ state.selected = state.selected.filter(c=>c!==code); renderChips(); renderCompare(); updateShare(); renderTable(); }
+function renderChips(){
+  $("chips").innerHTML = state.selected.length ? "" : `<span class="hint">尚未選擇，請搜尋或勾選下方表格。</span>`;
+  state.selected.forEach(c=>{
+    const s=document.createElement("span"); s.className="chip";
+    s.innerHTML=`<b>${esc(c)} ${esc(state.nameMap[c]||"")}</b>`;
+    const b=document.createElement("button"); b.textContent="✕"; b.onclick=()=>removeCode(c);
+    s.appendChild(b); $("chips").appendChild(s);
+  });
+}
+function updateShare(){
+  const u = new URL(location.href); u.searchParams.set("s",state.selected.join(","));
+  $("shareUrl").textContent = u.toString();
+}
+
+// 列表渲染
+function filteredRows(){
+  const kw=$("fKeyword").value.trim().toLowerCase(), ind=$("fIndustry").value, minY=Number($("fYoY").value), only=$("fOnlySel").checked;
+  let rows=[...state.rows];
+  if(only) rows=rows.filter(r=>state.selected.includes(r.code));
+  if(kw) rows=rows.filter(r=>(r.code+r.name).toLowerCase().includes(kw));
+  if(ind) rows=rows.filter(r=>r.industry===ind);
+  rows=rows.filter(r=>r.yoy==null||r.yoy>=minY);
+  const sort=$("fSort").value;
+  rows.sort((a,b)=> sort==="rev_desc" ? (b.rev??-1)-(a.rev??-1) : sort==="code_asc" ? a.code.localeCompare(b.code) : (b.yoy??-9999)-(a.yoy??-9999));
+  return rows.slice(0,300);
+}
+function renderTable(){
+  const tb=$("tbody"); const rows=filteredRows();
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="9" style="text-align:center;color:#999">無符合資料</td></tr>`; return; }
+  tb.innerHTML = rows.map(r=>`<tr>
+    <td><input type="checkbox" data-code="${esc(r.code)}" ${state.selected.includes(r.code)?"checked":""}></td>
+    <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td>${esc(r.industry)}</td><td>${esc(r.ym)}</td>
+    <td>${fmt(r.rev)}</td><td>${pct(r.mom)}</td><td>${pct(r.yoy)}</td><td>${pct(r.accYoy)}</td></tr>`).join("");
+  tb.querySelectorAll("input[type=checkbox]").forEach(cb=>cb.onchange=()=>{
+    cb.checked ? addCode(cb.dataset.code) : removeCode(cb.dataset.code);
+  });
+}
+
+// 比較區
+function renderCompare(){
+  renderChips();
+  const tb=$("tbodyCmp");
+  tb.innerHTML = state.selected.length ? state.selected.map(c=>{
+    const r = state.rows.find(x=>x.code===c);
+    const epsArr = state.eps[c]||[];
+    const lastEps = epsArr.length?epsArr[epsArr.length-1].eps:null;
+    const ttm = epsArr.length?epsArr.slice(-4).reduce((s,x)=>s+(Number(x.eps)||0),0):null;
+    return `<tr><td style="text-align:left">${esc(c)} ${esc(state.nameMap[c]||r?.name||"")}</td>
+      <td>${esc(r?.ym||"-")}</td><td>${r?fmt(r.rev):"-"}</td><td>${r?pct(r.mom):"-"}</td><td>${r?pct(r.yoy):"-"}</td><td>${r?pct(r.accYoy):"-"}</td>
+      <td>${lastEps??"-"}</td><td>${ttm!=null?ttm.toFixed(2):"-"}</td></tr>`;
+  }).join("") : `<tr><td colspan="8" style="text-align:center;color:#999">尚未選擇公司</td></tr>`;
+
+  // 圖1：最新月 YoY
+  const ch1 = echarts.init($("chartYoY"));
+  const snap = state.selected.map(c=>{ const r=state.rows.find(x=>x.code===c); return {c, yoy:r?.yoy??null}; });
+  ch1.setOption({ tooltip:{trigger:"axis"}, xAxis:{type:"category",data:snap.map(s=>s.c)}, yAxis:{type:"value",name:"YoY%"},
+    series:[{type:"bar",data:snap.map(s=>({value:s.yoy, itemStyle:{color:(s.yoy??0)>=0?"#c53030":"#2f855a"}}))}] });
+
+  // 圖2：趨勢
+  const ch2 = echarts.init($("chartTrend"));
+  const codes = state.selected.filter(c=>state.trend[c]?.length);
+  const xMonths = [...new Set(codes.flatMap(c=>state.trend[c].map(p=>p.ym)))].sort().slice(-12);
+  ch2.setOption({ tooltip:{trigger:"axis"}, legend:{data:codes}, xAxis:{type:"category",data:xMonths},
+    yAxis:{type:"value",name:"營收"}, series:codes.map(c=>({name:c,type:"line",smooth:true,
+      data:xMonths.map(m=>state.trend[c].find(p=>p.ym===m)?.revenue??null)})) });
+
+  // 圖3：EPS
+  const ch3 = echarts.init($("chartEps"));
+  const ecodes = state.selected.filter(c=>state.eps[c]?.length);
+  const xQ = [...new Set(ecodes.flatMap(c=>state.eps[c].map(p=>p.q)))].slice(-8);
+  ch3.setOption({ tooltip:{trigger:"axis"}, legend:{data:ecodes}, xAxis:{type:"category",data:xQ},
+    yAxis:{type:"value",name:"EPS"}, series:ecodes.map(c=>({name:c,type:"bar",
+      data:xQ.map(q=>state.eps[c].find(p=>p.q===q)?.eps??null)})) });
+  window.addEventListener("resize",()=>{ch1.resize();ch2.resize();ch3.resize();},{once:true});
+}
+
+// 事件
+$("btnTwse").onclick = ()=>loadTwse().catch(e=>setStatus("TWSE 載入失敗："+e.message+"（改按 Demo 先看版面）"));
+$("btnDemo").onclick = loadDemo;
+$("btnFinmind").onclick = ()=>loadFinmind().catch(e=>setStatus("FinMind 失敗："+e.message));
+$("btnClear").onclick = ()=>{ localStorage.removeItem(LS_CACHE); setStatus("快取已清除。"); };
+$("btnSaveToken").onclick = ()=>{ localStorage.setItem(LS_TOKEN,$("token").value.trim()); setStatus("token 已存本機。"); };
+$("btnAdd").onclick = ()=>{ addCode($("search").value); $("search").value=""; };
+$("search").addEventListener("keydown",e=>{ if(e.key==="Enter") $("btnAdd").click(); });
+["fKeyword","fIndustry","fYoY","fSort","fOnlySel"].forEach(id=>$(id).addEventListener("input",renderTable));
+$("btnCopy").onclick = ()=>navigator.clipboard?.writeText($("shareUrl").textContent);
+$("checkAll").onchange = e=>{
+  filteredRows().slice(0,5).forEach(r=>{ const has=state.selected.includes(r.code);
+    if(e.target.checked && !has && state.selected.length<MAX_SEL) state.selected.push(r.code);
+    if(!e.target.checked && has) state.selected=state.selected.filter(c=>c!==r.code); });
+  renderCompare(); updateShare(); renderTable();
+};
+
+// init
+(function init(){
+  $("token").value = localStorage.getItem(LS_TOKEN)||"";
+  $("quick").innerHTML = QUICK.map(c=>`<button class="ghost" data-c="${c}">${c}</button>`).join("");
+  $("quick").querySelectorAll("button").forEach(b=>b.onclick=()=>addCode(b.dataset.c));
+  const s = new URLSearchParams(location.search).get("s");
+  (s? s.split(",") : ["2330","2317"]).forEach(addCode);
+  refreshDatalist(); renderChips(); updateShare();
+})();
+</script>
+</body>
+</html>
