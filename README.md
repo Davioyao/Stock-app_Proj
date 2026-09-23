@@ -5,6 +5,8 @@
 - 🌐 網頁版：https://davioyao.github.io/Stock-app_Proj/ （開啟即用）
 - 🖥️ 桌面版：`stock_gui.py`（功能較完整，建議用這個）
 
+<img src="Demo-pic.png" alt="使用範例" width="880">
+
 ## 功能
 
 - 上市＋上櫃當月營收快照（代號、名稱、市場、產業、MoM/YoY/累計 YoY）
