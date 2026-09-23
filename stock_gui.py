@@ -575,6 +575,8 @@ class App(tk.Tk):
                   width=28).pack(side="left")
         ttk.Button(f1, text="儲存",
                    command=self.on_save_token).pack(side="left", padx=4)
+        ttk.Button(f1, text="清除token/中繼站",
+                   command=self.on_clear_token).pack(side="left", padx=4)
         self.status_var = tk.StringVar()
         ttk.Label(self, textvariable=self.status_var, foreground="#555",
                   wraplength=1000, justify="left").pack(fill="x", padx=10)
@@ -804,6 +806,11 @@ class App(tk.Tk):
     def on_save_token(self):
         ok = save_token(self.token_var.get())
         self.set_status("token 已存本機。" if ok else "token 儲存失敗。")
+
+    def on_clear_token(self):
+        # 只清輸入框：本機 .env 保留（不上傳），下次啟動照樣讀得到
+        self.set_status("已清除輸入框，本機 .env 保留。")
+        self.token_var.set("")
 
     # ----- 載入資料（背景執行緒 + after 回主執行緒） -----
     def run_bg(self, fn):

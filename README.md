@@ -40,7 +40,7 @@ python stock_gui.py
 
 ## 中繼（給網頁版快照用）
 
-TWSE/TPEx 沒送跨域標頭，瀏覽器會擋。把 `worker.js` 部署到 Cloudflare（免費），
+TWSE/TPEx 沒送跨域標頭，瀏覽器會擋。把 `worker.js` 部署到 Cloudflare（ https://www.cloudflare.com/zh-tw/ ），
 網址填進頁面「中繼網址」欄即可；FinMind 可直連不需要中繼。桌面版不受影響。
 
 ## 檔案

@@ -58,6 +58,7 @@
     <div class="row" style="margin-top:8px">
       <input id="token" type="password" placeholder="FinMind token（選填，存本機瀏覽器）" style="flex:1;min-width:220px">
       <button id="btnSaveToken" class="ghost">儲存 token</button>
+      <button id="btnClearToken" class="ghost">清除token/中繼站</button>
     </div>
     <p class="status" id="status">尚未載入資料。先按「TWSE+MOPS(no key)」載入上市＋上櫃快照。</p>
     <p class="hint">快照免 key（含上市 TWSE＋上櫃 TPEx）；24 個月趨勢＋近 8 季 EPS 需要 FinMind token（只存本機 localStorage）。瀏覽器擋快照跨域時：有填中繼走中繼，否則有 token 自動改用 FinMind 名錄（可選股、無當月數字）。</p>
@@ -556,6 +557,11 @@ $("btnFinmind").onclick = ()=>loadFinmind().catch(e=>setStatus("FinMind 失敗�
 $("btnStop").onclick = ()=>{ stopFlag = true; setStatus("已要求停止，將在目前公司抓完後停下。"); };
 $("btnClear").onclick = ()=>{ localStorage.removeItem(LS_CACHE); setStatus("快取已清除。"); };
 $("btnSaveToken").onclick = ()=>{ localStorage.setItem(LS_TOKEN,$("token").value.trim()); setStatus("token 已存本機。"); };
+$("btnClearToken").onclick = ()=>{
+  try{ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_PROXY); }catch{}
+  $("token").value = ""; $("proxy").value = "";
+  setStatus("token 與中繼網址已清除（本機）。");
+};
 $("proxy").addEventListener("input",()=>{ try{ localStorage.setItem(LS_PROXY,$("proxy").value.trim()); }catch{} });
 $("btnAdd").onclick = ()=>{ addCode($("search").value); $("search").value=""; };
 $("btnRemove").onclick = removeSelected;
